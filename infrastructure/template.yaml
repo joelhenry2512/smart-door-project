@@ -1,0 +1,338 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Smart Door Authentication System - ECE 528 Project
+
+Parameters:
+  OwnerPhone:
+    Type: String
+    Description: Owner phone (E.164 format)
+  OwnerEmail:
+    Type: String
+    Description: Owner email
+
+Resources:
+  # S3 Bucket (B1) - Visitor Photos
+  PhotosBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'smartdoor-photos-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT]
+            AllowedOrigins: ['*']
+
+  PhotosBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PhotosBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${PhotosBucket.Arn}/*'
+
+  # DynamoDB (DB1) - Passcodes with TTL
+  PasscodesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: smartdoor-passcodes
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: otp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: otp
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # DynamoDB (DB2) - Visitors
+  VisitorsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: smartdoor-visitors
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: faceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: faceId
+          KeyType: HASH
+
+  # Kinesis Video Stream (KVS1)
+  VideoStream:
+    Type: AWS::KinesisVideo::Stream
+    Properties:
+      Name: smartdoor-video-stream
+      DataRetentionInHours: 24
+
+  # Kinesis Data Stream (KDS1)
+  DataStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: smartdoor-data-stream
+      ShardCount: 1
+
+  # Lambda Execution Role
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: smartdoor-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SmartDoorPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem, dynamodb:UpdateItem]
+                Resource: [!GetAtt PasscodesTable.Arn, !GetAtt VisitorsTable.Arn]
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub '${PhotosBucket.Arn}/*'
+              - Effect: Allow
+                Action: [rekognition:SearchFacesByImage, rekognition:IndexFaces, rekognition:CreateCollection]
+                Resource: '*'
+              - Effect: Allow
+                Action: [kinesis:GetRecords, kinesis:GetShardIterator, kinesis:DescribeStream]
+                Resource: !GetAtt DataStream.Arn
+              - Effect: Allow
+                Action: [kinesisvideo:GetDataEndpoint, kinesisvideo:GetMedia]
+                Resource: '*'
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: '*'
+
+  # Lambda LF1 - Process Rekognition
+  LF1Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: smartdoor-lf1-process
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          VISITORS_TABLE: !Ref VisitorsTable
+          PASSCODES_TABLE: !Ref PasscodesTable
+          PHOTOS_BUCKET: !Ref PhotosBucket
+          OWNER_PHONE: !Ref OwnerPhone
+          OWNER_EMAIL: !Ref OwnerEmail
+          COLLECTION_ID: smartdoor-faces
+          WP1_URL: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod/wp1.html'
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {'statusCode': 200}
+
+  # Lambda LF2 - Visitor Registration
+  LF2Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: smartdoor-lf2-register
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 30
+      Environment:
+        Variables:
+          VISITORS_TABLE: !Ref VisitorsTable
+          PASSCODES_TABLE: !Ref PasscodesTable
+          PHOTOS_BUCKET: !Ref PhotosBucket
+          COLLECTION_ID: smartdoor-faces
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {'statusCode': 200}
+
+  # Lambda LF3 - OTP Validation
+  LF3Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: smartdoor-lf3-validate
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 10
+      Environment:
+        Variables:
+          PASSCODES_TABLE: !Ref PasscodesTable
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {'statusCode': 200}
+
+  # Kinesis Trigger for LF1
+  KinesisTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt DataStream.Arn
+      FunctionName: !Ref LF1Function
+      StartingPosition: LATEST
+      BatchSize: 1
+
+  # API Gateway
+  Api:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: smartdoor-api
+
+  RegisterResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: register
+
+  RegisterMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref RegisterResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LF2Function.Arn}/invocations'
+
+  RegisterOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref RegisterResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ValidateResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: validate
+
+  ValidateMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref ValidateResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LF3Function.Arn}/invocations'
+
+  ValidateOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref ValidateResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: [RegisterMethod, ValidateMethod]
+    Properties:
+      RestApiId: !Ref Api
+      StageName: prod
+
+  LF2Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LF2Function
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  LF3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LF3Function
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+
+  # Rekognition Service Role
+  RekognitionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: smartdoor-rekognition-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: rekognition.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RekognitionAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [kinesis:PutRecord, kinesis:PutRecords]
+                Resource: !GetAtt DataStream.Arn
+              - Effect: Allow
+                Action: [kinesisvideo:GetDataEndpoint, kinesisvideo:GetMedia]
+                Resource: '*'
+
+Outputs:
+  ApiEndpoint:
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod'
+  PhotosBucket:
+    Value: !Ref PhotosBucket
+  VideoStreamArn:
+    Value: !GetAtt VideoStream.Arn
+  DataStreamArn:
+    Value: !GetAtt DataStream.Arn
+  RekognitionRoleArn:
+    Value: !GetAtt RekognitionRole.Arn

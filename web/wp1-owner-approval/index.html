@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Door - Visitor Approval</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+            padding: 40px;
+            max-width: 480px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+            border-radius: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 20px;
+            box-shadow: 0 10px 30px rgba(233, 69, 96, 0.3);
+        }
+
+        .header-icon svg {
+            width: 40px;
+            height: 40px;
+            fill: white;
+        }
+
+        h1 {
+            color: #1a1a2e;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .alert {
+            background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%);
+            border: 1px solid #ffc107;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .alert-icon {
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+
+        .alert-text {
+            color: #856404;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .visitor-photo {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #f0f0f0;
+            border-radius: 16px;
+            margin-bottom: 24px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 3px solid #e0e0e0;
+        }
+
+        .visitor-photo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .visitor-photo .placeholder {
+            color: #999;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .visitor-photo .placeholder svg {
+            width: 48px;
+            height: 48px;
+            fill: #ccc;
+            margin-bottom: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            color: #1a1a2e;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: #fafafa;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #e94560;
+            background: white;
+            box-shadow: 0 0 0 4px rgba(233, 69, 96, 0.1);
+        }
+
+        input::placeholder {
+            color: #aaa;
+        }
+
+        .phone-input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        .country-code {
+            width: 80px;
+            flex-shrink: 0;
+            text-align: center;
+        }
+
+        .phone-number {
+            flex: 1;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-approve {
+            background: linear-gradient(135deg, #00b894 0%, #00cec9 100%);
+            color: white;
+            box-shadow: 0 10px 30px rgba(0, 184, 148, 0.3);
+        }
+
+        .btn-approve:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 35px rgba(0, 184, 148, 0.4);
+        }
+
+        .btn-approve:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-deny {
+            background: transparent;
+            color: #e94560;
+            border: 2px solid #e94560;
+            margin-top: 12px;
+        }
+
+        .btn-deny:hover {
+            background: #e94560;
+            color: white;
+        }
+
+        .result {
+            text-align: center;
+            padding: 30px;
+            display: none;
+        }
+
+        .result-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 20px;
+        }
+
+        .result-icon.success {
+            background: linear-gradient(135deg, #00b894 0%, #00cec9 100%);
+        }
+
+        .result-icon.error {
+            background: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+        }
+
+        .result-icon svg {
+            width: 40px;
+            height: 40px;
+            fill: white;
+        }
+
+        .result h2 {
+            color: #1a1a2e;
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .result p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 24px;
+            }
+            
+            h1 {
+                font-size: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Form View -->
+        <div id="formView">
+            <div class="header">
+                <div class="header-icon">
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                    </svg>
+                </div>
+                <h1>Visitor Approval</h1>
+                <p class="subtitle">An unknown visitor is requesting access</p>
+            </div>
+
+            <div class="alert">
+                <span class="alert-icon">⚠️</span>
+                <p class="alert-text">Review the visitor's photo and provide their information to grant access. An OTP will be sent to their phone.</p>
+            </div>
+
+            <div class="visitor-photo" id="visitorPhoto">
+                <div class="placeholder">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+                    </svg>
+                    <p>Loading visitor photo...</p>
+                </div>
+            </div>
+
+            <form id="approvalForm">
+                <div class="form-group">
+                    <label for="visitorName">Visitor Name</label>
+                    <input type="text" id="visitorName" name="name" placeholder="Enter visitor's full name" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="phoneNumber">Phone Number</label>
+                    <div class="phone-input-container">
+                        <input type="text" class="country-code" value="+1" readonly>
+                        <input type="tel" id="phoneNumber" name="phoneNumber" class="phone-number" placeholder="(555) 123-4567" required pattern="[\d\s\-\(\)]{10,}">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-approve" id="approveBtn">
+                    <span id="btnText">Approve & Send OTP</span>
+                    <div class="spinner hidden" id="spinner"></div>
+                </button>
+
+                <button type="button" class="btn btn-deny" id="denyBtn">
+                    Deny Access
+                </button>
+            </form>
+        </div>
+
+        <!-- Success Result -->
+        <div id="successView" class="result">
+            <div class="result-icon success">
+                <svg viewBox="0 0 24 24">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                </svg>
+            </div>
+            <h2>Access Approved!</h2>
+            <p id="successMessage">An OTP has been sent to the visitor's phone.</p>
+        </div>
+
+        <!-- Error Result -->
+        <div id="errorView" class="result">
+            <div class="result-icon error">
+                <svg viewBox="0 0 24 24">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
+            </div>
+            <h2>Error</h2>
+            <p id="errorMessage">Something went wrong. Please try again.</p>
+        </div>
+
+        <!-- Denied Result -->
+        <div id="deniedView" class="result">
+            <div class="result-icon error">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"/>
+                </svg>
+            </div>
+            <h2>Access Denied</h2>
+            <p>The visitor has been denied access.</p>
+        </div>
+    </div>
+
+    <script>
+        // Configuration - UPDATE THESE VALUES
+        const CONFIG = {
+            API_URL: 'YOUR_API_GATEWAY_URL', // e.g., https://xxx.execute-api.region.amazonaws.com/dev
+            PHOTOS_BUCKET_URL: 'YOUR_S3_BUCKET_URL' // e.g., https://bucket-name.s3.amazonaws.com
+        };
+
+        // Get URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const faceId = urlParams.get('faceId');
+        const photoKey = urlParams.get('photo');
+
+        // Load visitor photo if available
+        function loadVisitorPhoto() {
+            const photoContainer = document.getElementById('visitorPhoto');
+            
+            if (photoKey && CONFIG.PHOTOS_BUCKET_URL !== 'YOUR_S3_BUCKET_URL') {
+                const photoUrl = `${CONFIG.PHOTOS_BUCKET_URL}/${photoKey}`;
+                const img = document.createElement('img');
+                img.src = photoUrl;
+                img.alt = 'Visitor Photo';
+                img.onerror = () => {
+                    photoContainer.innerHTML = `
+                        <div class="placeholder">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+                            </svg>
+                            <p>Photo unavailable</p>
+                        </div>
+                    `;
+                };
+                photoContainer.innerHTML = '';
+                photoContainer.appendChild(img);
+            } else {
+                photoContainer.innerHTML = `
+                    <div class="placeholder">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                        </svg>
+                        <p>No photo captured</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Format phone number as user types
+        document.getElementById('phoneNumber').addEventListener('input', (e) => {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.length > 0) {
+                if (value.length <= 3) {
+                    value = `(${value}`;
+                } else if (value.length <= 6) {
+                    value = `(${value.slice(0, 3)}) ${value.slice(3)}`;
+                } else {
+                    value = `(${value.slice(0, 3)}) ${value.slice(3, 6)}-${value.slice(6, 10)}`;
+                }
+            }
+            e.target.value = value;
+        });
+
+        // Handle form submission
+        document.getElementById('approvalForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const btn = document.getElementById('approveBtn');
+            const btnText = document.getElementById('btnText');
+            const spinner = document.getElementById('spinner');
+            
+            // Show loading state
+            btn.disabled = true;
+            btnText.textContent = 'Processing...';
+            spinner.classList.remove('hidden');
+            
+            const name = document.getElementById('visitorName').value.trim();
+            const phoneRaw = document.getElementById('phoneNumber').value.replace(/\D/g, '');
+            const phoneNumber = `+1${phoneRaw}`;
+            
+            try {
+                const response = await fetch(`${CONFIG.API_URL}/visitor`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        faceId: faceId,
+                        name: name,
+                        phoneNumber: phoneNumber,
+                        photoKey: photoKey
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showSuccess(`An OTP has been sent to ${name}'s phone (${phoneNumber}).`);
+                } else {
+                    showError(data.error || 'Failed to register visitor');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('Network error. Please check your connection and try again.');
+            }
+        });
+
+        // Handle deny button
+        document.getElementById('denyBtn').addEventListener('click', () => {
+            if (confirm('Are you sure you want to deny access to this visitor?')) {
+                showDenied();
+            }
+        });
+
+        // Show success view
+        function showSuccess(message) {
+            document.getElementById('formView').classList.add('hidden');
+            document.getElementById('successMessage').textContent = message;
+            document.getElementById('successView').style.display = 'block';
+        }
+
+        // Show error view
+        function showError(message) {
+            document.getElementById('formView').classList.add('hidden');
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorView').style.display = 'block';
+        }
+
+        // Show denied view
+        function showDenied() {
+            document.getElementById('formView').classList.add('hidden');
+            document.getElementById('deniedView').style.display = 'block';
+        }
+
+        // Initialize
+        loadVisitorPhoto();
+    </script>
+</body>
+</html>

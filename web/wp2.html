@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Door - Virtual Door</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+            max-width: 420px;
+            width: 100%;
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        .door-icon {
+            width: 70px;
+            height: 70px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 15px;
+            font-size: 36px;
+        }
+        .header h1 { font-size: 26px; margin-bottom: 8px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .form-section { padding: 35px; }
+        .alert { padding: 12px; border-radius: 8px; margin-bottom: 20px; display: none; text-align: center; }
+        .alert-error { background: #f8d7da; border: 1px solid #f5c2c7; color: #842029; }
+        .instruction { text-align: center; color: #666; margin-bottom: 25px; }
+        .otp-container { display: flex; justify-content: center; gap: 10px; margin-bottom: 25px; }
+        .otp-input {
+            width: 48px;
+            height: 56px;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+        }
+        .otp-input:focus { outline: none; border-color: #667eea; }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102,126,234,0.3); }
+        .loading, .success, .denied { display: none; text-align: center; padding: 40px; }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e9ecef;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .result-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 20px;
+            font-size: 40px;
+            color: white;
+        }
+        .success .result-icon { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); }
+        .denied .result-icon { background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); }
+        .success h2 { color: #28a745; margin-bottom: 10px; }
+        .denied h2 { color: #dc3545; margin-bottom: 10px; }
+        .result-msg { color: #666; margin-bottom: 20px; }
+        .door-animation { font-size: 60px; margin: 25px 0; animation: swing 1s ease-out; }
+        @keyframes swing { 0% { transform: perspective(500px) rotateY(0); } 100% { transform: perspective(500px) rotateY(-30deg); } }
+        .retry-btn {
+            padding: 12px 28px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .retry-btn:hover { background: #5a6268; }
+        .footer { text-align: center; padding: 15px; color: #6c757d; font-size: 12px; border-top: 1px solid #e9ecef; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="door-icon">🚪</div>
+            <h1>Virtual Door</h1>
+            <p>Enter your access code</p>
+        </div>
+        
+        <div class="form-section" id="formSection">
+            <div class="alert alert-error" id="alertError"></div>
+            <p class="instruction">Enter the 6-digit code sent to your phone</p>
+            
+            <form id="otpForm">
+                <div class="otp-container">
+                    <input type="text" maxlength="1" class="otp-input" inputmode="numeric">
+                    <input type="text" maxlength="1" class="otp-input" inputmode="numeric">
+                    <input type="text" maxlength="1" class="otp-input" inputmode="numeric">
+                    <input type="text" maxlength="1" class="otp-input" inputmode="numeric">
+                    <input type="text" maxlength="1" class="otp-input" inputmode="numeric">
+                    <input type="text" maxlength="1" class="otp-input" inputmode="numeric">
+                </div>
+                <button type="submit" class="btn">🔓 Unlock Door</button>
+            </form>
+        </div>
+        
+        <div class="loading" id="loadingSection">
+            <div class="spinner"></div>
+            <p>Verifying...</p>
+        </div>
+        
+        <div class="success" id="successSection">
+            <div class="result-icon">✓</div>
+            <h2>Access Granted!</h2>
+            <p class="result-msg" id="welcomeMsg">Welcome!</p>
+            <div class="door-animation">🚪</div>
+            <p class="result-msg">Door unlocked. Please enter.</p>
+        </div>
+        
+        <div class="denied" id="deniedSection">
+            <div class="result-icon">✗</div>
+            <h2>Access Denied</h2>
+            <p class="result-msg" id="deniedMsg">Invalid or expired code.</p>
+            <button class="retry-btn" onclick="reset()">Try Again</button>
+        </div>
+        
+        <div class="footer">ECE 528 - Smart Door System</div>
+    </div>
+
+    <script>
+        // CONFIG - Update this
+        const API_ENDPOINT = 'YOUR_API_ENDPOINT';
+        
+        const inputs = document.querySelectorAll('.otp-input');
+        
+        inputs.forEach((input, i) => {
+            if (i === 0) input.focus();
+            
+            input.addEventListener('input', (e) => {
+                e.target.value = e.target.value.replace(/[^0-9]/g, '');
+                if (e.target.value && i < inputs.length - 1) inputs[i + 1].focus();
+                if (getOTP().length === 6) {
+                    setTimeout(() => document.getElementById('otpForm').dispatchEvent(new Event('submit')), 100);
+                }
+            });
+            
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !e.target.value && i > 0) inputs[i - 1].focus();
+                if (e.key === 'ArrowLeft' && i > 0) inputs[i - 1].focus();
+                if (e.key === 'ArrowRight' && i < inputs.length - 1) inputs[i + 1].focus();
+            });
+            
+            input.addEventListener('paste', (e) => {
+                e.preventDefault();
+                const data = e.clipboardData.getData('text').replace(/[^0-9]/g, '');
+                for (let j = 0; j < data.length && j < inputs.length; j++) inputs[j].value = data[j];
+            });
+        });
+        
+        function getOTP() {
+            return Array.from(inputs).map(i => i.value).join('');
+        }
+        
+        function reset() {
+            document.getElementById('deniedSection').style.display = 'none';
+            document.getElementById('formSection').style.display = 'block';
+            document.getElementById('alertError').style.display = 'none';
+            inputs.forEach(i => i.value = '');
+            inputs[0].focus();
+        }
+        
+        document.getElementById('otpForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const otp = getOTP();
+            if (otp.length !== 6) {
+                document.getElementById('alertError').textContent = 'Enter all 6 digits';
+                document.getElementById('alertError').style.display = 'block';
+                return;
+            }
+            
+            document.getElementById('alertError').style.display = 'none';
+            document.getElementById('formSection').style.display = 'none';
+            document.getElementById('loadingSection').style.display = 'block';
+            
+            try {
+                const resp = await fetch(`${API_ENDPOINT}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ otp })
+                });
+                
+                const data = await resp.json();
+                document.getElementById('loadingSection').style.display = 'none';
+                
+                if (data.valid) {
+                    document.getElementById('welcomeMsg').textContent = `Welcome, ${data.visitorName}!`;
+                    document.getElementById('successSection').style.display = 'block';
+                } else {
+                    document.getElementById('deniedMsg').textContent = data.message || 'Invalid code.';
+                    document.getElementById('deniedSection').style.display = 'block';
+                }
+            } catch (err) {
+                document.getElementById('loadingSection').style.display = 'none';
+                document.getElementById('formSection').style.display = 'block';
+                document.getElementById('alertError').textContent = 'Connection error';
+                document.getElementById('alertError').style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Door - Visitor Registration</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+            max-width: 480px;
+            width: 100%;
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 26px; margin-bottom: 8px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .photo-section {
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        .photo-section img {
+            max-width: 180px;
+            max-height: 180px;
+            border-radius: 10px;
+            border: 3px solid #667eea;
+        }
+        .no-photo {
+            width: 180px;
+            height: 180px;
+            border-radius: 10px;
+            background: #e9ecef;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto;
+            color: #6c757d;
+        }
+        .form-section { padding: 30px; }
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .alert-info { background: #e7f3ff; border: 1px solid #b6d4fe; color: #084298; }
+        .alert-error { background: #f8d7da; border: 1px solid #f5c2c7; color: #842029; }
+        .form-group { margin-bottom: 18px; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: 600; color: #333; }
+        .form-group input {
+            width: 100%;
+            padding: 14px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        .form-group input:focus { outline: none; border-color: #667eea; }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102,126,234,0.3); }
+        .btn:disabled { background: #adb5bd; cursor: not-allowed; transform: none; }
+        .loading, .success { display: none; text-align: center; padding: 40px; }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e9ecef;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .success-icon {
+            width: 70px;
+            height: 70px;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 20px;
+        }
+        .success-icon::after { content: '✓'; color: white; font-size: 36px; }
+        .success h2 { color: #28a745; margin-bottom: 10px; }
+        .success p { color: #666; margin-bottom: 20px; }
+        .door-link {
+            display: inline-block;
+            padding: 12px 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        .footer { text-align: center; padding: 15px; color: #6c757d; font-size: 12px; border-top: 1px solid #e9ecef; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚪 Smart Door</h1>
+            <p>Visitor Registration</p>
+        </div>
+        
+        <div class="photo-section">
+            <div class="no-photo" id="noPhoto">📷 No photo</div>
+            <img id="visitorImg" src="" alt="Visitor" style="display:none;">
+        </div>
+        
+        <div class="form-section" id="formSection">
+            <div class="alert alert-info" id="alertInfo">New visitor detected. Enter details to approve.</div>
+            <div class="alert alert-error" id="alertError"></div>
+            
+            <form id="regForm">
+                <input type="hidden" id="faceId">
+                <input type="hidden" id="photoKey">
+                
+                <div class="form-group">
+                    <label>Visitor Name</label>
+                    <input type="text" id="name" placeholder="Enter name" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="tel" id="phone" placeholder="+1 234 567 8901" required>
+                </div>
+                
+                <button type="submit" class="btn">Approve & Send Code</button>
+            </form>
+        </div>
+        
+        <div class="loading" id="loadingSection">
+            <div class="spinner"></div>
+            <p>Registering visitor...</p>
+        </div>
+        
+        <div class="success" id="successSection">
+            <div class="success-icon"></div>
+            <h2>Success!</h2>
+            <p id="successMsg">Access code sent.</p>
+            <a href="wp2.html" class="door-link">Go to Virtual Door</a>
+        </div>
+        
+        <div class="footer">ECE 528 - Smart Door System</div>
+    </div>
+
+    <script>
+        // CONFIG - Update these
+        const API_ENDPOINT = 'YOUR_API_ENDPOINT';
+        const S3_BUCKET_URL = 'YOUR_S3_BUCKET_URL';
+        
+        const params = new URLSearchParams(window.location.search);
+        const faceId = params.get('faceId');
+        const photoKey = params.get('photo');
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('faceId').value = faceId || '';
+            document.getElementById('photoKey').value = photoKey || '';
+            
+            if (photoKey) {
+                const img = document.getElementById('visitorImg');
+                img.src = `${S3_BUCKET_URL}/${photoKey}`;
+                img.onload = () => {
+                    img.style.display = 'block';
+                    document.getElementById('noPhoto').style.display = 'none';
+                };
+            }
+            
+            if (faceId) {
+                document.getElementById('alertInfo').style.display = 'block';
+            }
+        });
+        
+        document.getElementById('regForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            document.getElementById('alertInfo').style.display = 'none';
+            document.getElementById('alertError').style.display = 'none';
+            document.getElementById('formSection').style.display = 'none';
+            document.getElementById('loadingSection').style.display = 'block';
+            
+            try {
+                const resp = await fetch(`${API_ENDPOINT}/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: document.getElementById('name').value,
+                        phoneNumber: document.getElementById('phone').value,
+                        faceId: document.getElementById('faceId').value,
+                        photoKey: document.getElementById('photoKey').value
+                    })
+                });
+                
+                const data = await resp.json();
+                
+                if (resp.ok) {
+                    document.getElementById('loadingSection').style.display = 'none';
+                    document.getElementById('successSection').style.display = 'block';
+                    document.getElementById('successMsg').textContent = 
+                        `Code sent to ${document.getElementById('name').value}`;
+                } else {
+                    throw new Error(data.error || 'Failed');
+                }
+            } catch (err) {
+                document.getElementById('loadingSection').style.display = 'none';
+                document.getElementById('formSection').style.display = 'block';
+                document.getElementById('alertError').textContent = err.message;
+                document.getElementById('alertError').style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

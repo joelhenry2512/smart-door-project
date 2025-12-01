@@ -1,0 +1,525 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Smart Door Authentication System - Complete AWS Infrastructure
+
+Parameters:
+  OwnerPhoneNumber:
+    Type: String
+    Description: Owner's phone number for SMS notifications (E.164 format)
+    AllowedPattern: '^\+[1-9]\d{1,14}$'
+    ConstraintDescription: Must be a valid E.164 phone number (e.g., +12025551234)
+  
+  OwnerEmail:
+    Type: String
+    Description: Owner's email for notifications
+    AllowedPattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+  
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment environment
+
+Resources:
+  #############################################
+  # S3 Bucket for Visitor Photos
+  #############################################
+  VisitorPhotosBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'smartdoor-visitor-photos-${AWS::AccountId}-${Environment}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldPhotos
+            Status: Enabled
+            ExpirationInDays: 90
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST]
+            AllowedOrigins: ['*']
+            MaxAge: 3000
+
+  #############################################
+  # DynamoDB Tables
+  #############################################
+  PasscodesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'smartdoor-passcodes-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: otp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: otp
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: SmartDoor
+
+  VisitorsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'smartdoor-visitors-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: faceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: faceId
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: SmartDoor
+
+  #############################################
+  # Kinesis Video Stream
+  #############################################
+  VideoStream:
+    Type: AWS::KinesisVideo::Stream
+    Properties:
+      Name: !Sub 'smartdoor-video-stream-${Environment}'
+      DataRetentionInHours: 24
+      Tags:
+        - Key: Project
+          Value: SmartDoor
+
+  #############################################
+  # Kinesis Data Stream (for Rekognition output)
+  #############################################
+  FaceEventsStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub 'smartdoor-face-events-${Environment}'
+      ShardCount: 1
+      RetentionPeriodHours: 24
+      Tags:
+        - Key: Project
+          Value: SmartDoor
+
+  #############################################
+  # SNS Topic for Notifications
+  #############################################
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'smartdoor-notifications-${Environment}'
+      DisplayName: SmartDoor Alerts
+
+  OwnerEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref NotificationTopic
+      Protocol: email
+      Endpoint: !Ref OwnerEmail
+
+  #############################################
+  # IAM Role for Lambda Functions
+  #############################################
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'smartdoor-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SmartDoorLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB Access
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt PasscodesTable.Arn
+                  - !GetAtt VisitorsTable.Arn
+              # S3 Access
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub '${VisitorPhotosBucket.Arn}/*'
+              # SNS Access
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref NotificationTopic
+              # Rekognition Access
+              - Effect: Allow
+                Action:
+                  - rekognition:SearchFacesByImage
+                  - rekognition:IndexFaces
+                  - rekognition:DetectFaces
+                  - rekognition:CreateCollection
+                  - rekognition:ListFaces
+                Resource: '*'
+              # Kinesis Video Access
+              - Effect: Allow
+                Action:
+                  - kinesisvideo:GetDataEndpoint
+                  - kinesisvideo:GetMedia
+                  - kinesisvideo:GetMediaForFragmentList
+                  - kinesisvideo:ListFragments
+                Resource: !GetAtt VideoStream.Arn
+              # Kinesis Data Stream Access
+              - Effect: Allow
+                Action:
+                  - kinesis:GetRecords
+                  - kinesis:GetShardIterator
+                  - kinesis:DescribeStream
+                  - kinesis:ListShards
+                Resource: !GetAtt FaceEventsStream.Arn
+
+  #############################################
+  # Lambda Function: LF1 - Stream Processor
+  #############################################
+  StreamProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'smartdoor-lf1-processor-${Environment}'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          VISITORS_TABLE: !Ref VisitorsTable
+          PASSCODES_TABLE: !Ref PasscodesTable
+          PHOTOS_BUCKET: !Ref VisitorPhotosBucket
+          SNS_TOPIC_ARN: !Ref NotificationTopic
+          OWNER_PHONE: !Ref OwnerPhoneNumber
+          COLLECTION_ID: !Sub 'smartdoor-faces-${Environment}'
+          KVS_STREAM_ARN: !GetAtt VideoStream.Arn
+          API_GATEWAY_URL: !Sub 'https://${SmartDoorApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+      Code:
+        ZipFile: |
+          # Placeholder - deploy actual code separately
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder'}
+      Tags:
+        - Key: Project
+          Value: SmartDoor
+
+  StreamProcessorEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt FaceEventsStream.Arn
+      FunctionName: !Ref StreamProcessorFunction
+      StartingPosition: LATEST
+      BatchSize: 10
+
+  #############################################
+  # Lambda Function: LF2 - Visitor Registration
+  #############################################
+  VisitorRegistrationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'smartdoor-lf2-registration-${Environment}'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          VISITORS_TABLE: !Ref VisitorsTable
+          PASSCODES_TABLE: !Ref PasscodesTable
+          PHOTOS_BUCKET: !Ref VisitorPhotosBucket
+          SNS_TOPIC_ARN: !Ref NotificationTopic
+          COLLECTION_ID: !Sub 'smartdoor-faces-${Environment}'
+      Code:
+        ZipFile: |
+          # Placeholder - deploy actual code separately
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder'}
+      Tags:
+        - Key: Project
+          Value: SmartDoor
+
+  #############################################
+  # Lambda Function: LF3 - OTP Validator
+  #############################################
+  OTPValidatorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'smartdoor-lf3-validator-${Environment}'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          PASSCODES_TABLE: !Ref PasscodesTable
+      Code:
+        ZipFile: |
+          # Placeholder - deploy actual code separately
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder'}
+      Tags:
+        - Key: Project
+          Value: SmartDoor
+
+  #############################################
+  # API Gateway
+  #############################################
+  SmartDoorApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub 'smartdoor-api-${Environment}'
+      Description: Smart Door Authentication System API
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  # /visitor resource
+  VisitorResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref SmartDoorApi
+      ParentId: !GetAtt SmartDoorApi.RootResourceId
+      PathPart: visitor
+
+  # POST /visitor - Register new visitor
+  VisitorPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref SmartDoorApi
+      ResourceId: !Ref VisitorResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${VisitorRegistrationFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # OPTIONS /visitor - CORS
+  VisitorOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref SmartDoorApi
+      ResourceId: !Ref VisitorResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # /validate resource
+  ValidateResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref SmartDoorApi
+      ParentId: !GetAtt SmartDoorApi.RootResourceId
+      PathPart: validate
+
+  # POST /validate - Validate OTP
+  ValidatePostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref SmartDoorApi
+      ResourceId: !Ref ValidateResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OTPValidatorFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # OPTIONS /validate - CORS
+  ValidateOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref SmartDoorApi
+      ResourceId: !Ref ValidateResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: ''
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - VisitorPostMethod
+      - VisitorOptionsMethod
+      - ValidatePostMethod
+      - ValidateOptionsMethod
+    Properties:
+      RestApiId: !Ref SmartDoorApi
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref SmartDoorApi
+      DeploymentId: !Ref ApiDeployment
+      StageName: !Ref Environment
+
+  # Lambda Permissions for API Gateway
+  LF2ApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref VisitorRegistrationFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SmartDoorApi}/*'
+
+  LF3ApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OTPValidatorFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SmartDoorApi}/*'
+
+  #############################################
+  # IAM Role for Rekognition Stream Processor
+  #############################################
+  RekognitionServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'smartdoor-rekognition-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: rekognition.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RekognitionStreamPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:PutRecord
+                  - kinesis:PutRecords
+                Resource: !GetAtt FaceEventsStream.Arn
+              - Effect: Allow
+                Action:
+                  - kinesisvideo:GetDataEndpoint
+                  - kinesisvideo:GetMedia
+                Resource: !GetAtt VideoStream.Arn
+
+Outputs:
+  VisitorPhotosBucketName:
+    Description: S3 bucket for visitor photos
+    Value: !Ref VisitorPhotosBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-PhotosBucket'
+
+  PasscodesTableName:
+    Description: DynamoDB table for OTPs
+    Value: !Ref PasscodesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-PasscodesTable'
+
+  VisitorsTableName:
+    Description: DynamoDB table for visitors
+    Value: !Ref VisitorsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-VisitorsTable'
+
+  VideoStreamArn:
+    Description: Kinesis Video Stream ARN
+    Value: !GetAtt VideoStream.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-VideoStreamArn'
+
+  FaceEventsStreamArn:
+    Description: Kinesis Data Stream ARN for face events
+    Value: !GetAtt FaceEventsStream.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-FaceEventsStreamArn'
+
+  ApiGatewayUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${SmartDoorApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiUrl'
+
+  LambdaRoleArn:
+    Description: Lambda execution role ARN
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaRoleArn'
+
+  RekognitionRoleArn:
+    Description: Rekognition service role ARN
+    Value: !GetAtt RekognitionServiceRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RekognitionRoleArn'
+
+  SNSTopicArn:
+    Description: SNS Topic ARN for notifications
+    Value: !Ref NotificationTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-SNSTopicArn'
