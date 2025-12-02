@@ -55,7 +55,7 @@ deploy_lambda() {
     
     # Install dependencies if requirements.txt exists
     if [ -f "$LAMBDA_DIR/requirements.txt" ]; then
-        pip install -r "$LAMBDA_DIR/requirements.txt" -t "$TEMP_DIR/" --quiet
+        pip3 install -r "$LAMBDA_DIR/requirements.txt" -t "$TEMP_DIR/" --quiet
     fi
     
     # Create deployment package

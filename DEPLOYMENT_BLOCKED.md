@@ -28,6 +28,8 @@ Ask your AWS administrator to grant CloudFormation permissions. See `PERMISSIONS
 
 **Quick fix:** Ask them to attach the `AWSCloudFormationFullAccess` policy to your user.
 
+**📋 Step-by-Step Guide:** See `OPTION1_REQUEST_PERMISSIONS.md` for detailed instructions on requesting permissions, verifying they were granted, and proceeding with deployment.
+
 ### Option 2: Use Different AWS Credentials
 
 If you have access to another AWS account or user with appropriate permissions:

@@ -83,8 +83,8 @@ cp "$PROJECT_DIR/web/wp1-owner-approval/index.html" /tmp/wp1/
 
 # Replace placeholders
 PHOTOS_BUCKET_URL="https://${PHOTOS_BUCKET}.s3.${REGION}.amazonaws.com"
-sed -i "s|YOUR_API_GATEWAY_URL|$API_URL|g" /tmp/wp1/index.html
-sed -i "s|YOUR_S3_BUCKET_URL|$PHOTOS_BUCKET_URL|g" /tmp/wp1/index.html
+sed -i '' "s|YOUR_API_GATEWAY_URL|$API_URL|g" /tmp/wp1/index.html
+sed -i '' "s|YOUR_S3_BUCKET_URL|$PHOTOS_BUCKET_URL|g" /tmp/wp1/index.html
 
 aws s3 cp /tmp/wp1/index.html "s3://$WEB_BUCKET/wp1/index.html" \
     --content-type "text/html"
@@ -95,7 +95,7 @@ mkdir -p /tmp/wp2
 cp "$PROJECT_DIR/web/wp2-virtual-door/index.html" /tmp/wp2/
 
 # Replace placeholders
-sed -i "s|YOUR_API_GATEWAY_URL|$API_URL|g" /tmp/wp2/index.html
+sed -i '' "s|YOUR_API_GATEWAY_URL|$API_URL|g" /tmp/wp2/index.html
 
 aws s3 cp /tmp/wp2/index.html "s3://$WEB_BUCKET/wp2/index.html" \
     --content-type "text/html"
