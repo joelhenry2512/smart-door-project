@@ -1,21 +1,8 @@
 # Smart Door Authentication System
 ## ECE 528 Cloud Computing Project Report
 ### University of Michigan-Dearborn
-### Joel Henry
-### Fall 2025
+### Joel Henry Arun
 
----
-
-## Table of Contents
-
-1. [Introduction](#1-introduction)
-2. [System Architecture](#2-system-architecture)
-3. [Implementation Details](#3-implementation-details)
-4. [Deployment](#4-deployment)
-5. [Testing and Results](#5-testing-and-results)
-6. [Discussion](#6-discussion)
-7. [Conclusion](#7-conclusion)
-8. [References](#8-references)
 
 ---
 
